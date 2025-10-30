@@ -16,7 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import API from '@/lib/api';
+import { FirebaseAPI } from '@/lib/firebase-api';
 
 interface DashboardStats {
   totalProjects: number;
@@ -29,7 +29,7 @@ interface DashboardStats {
 }
 
 interface RecentProject {
-  id: number;
+  id: string;
   name: string;
   progress: number;
   status: string;
@@ -62,9 +62,55 @@ export default function DashboardPage() {
     const load = async () => {
       try {
         setLoading(true);
-        const data = await API.getDashboard();
-        setStats(data.stats as DashboardStats);
-        setRecentProjects(data.recentProjects as RecentProject[]);
+        const [statsRaw, projects, tasks] = await Promise.all([
+          FirebaseAPI.getDashboardStats(),
+          FirebaseAPI.getProjects(),
+          FirebaseAPI.getTasks()
+        ]);
+
+        const completedProjects = (projects || []).filter((p: any) => p.status === 'completado').length;
+        const overdueTasks = (tasks || []).filter((t: any) => {
+          const isDone = t.status === 'completado';
+          const d = typeof t.deadline === 'string'
+            ? new Date(t.deadline)
+            : t.deadline?.toDate
+            ? t.deadline.toDate()
+            : null;
+          return !isDone && d instanceof Date && !isNaN(d.getTime()) && d.getTime() < Date.now();
+        }).length;
+
+        const mappedStats: DashboardStats = {
+          totalProjects: statsRaw.totalProjects || 0,
+          activeProjects: statsRaw.activeProjects || 0,
+          completedProjects,
+          totalTasks: statsRaw.totalTasks || 0,
+          completedTasks: statsRaw.completedTasks || 0,
+          totalTeamMembers: statsRaw.teamMembers || 0,
+          overdueTasks
+        };
+        setStats(mappedStats);
+
+        const recent = (projects || [])
+          .slice()
+          .sort((a: any, b: any) => {
+            const da = (typeof a.updatedAt === 'string' ? new Date(a.updatedAt) : a.updatedAt?.toDate ? a.updatedAt.toDate() : (typeof a.endDate === 'string' ? new Date(a.endDate) : a.endDate?.toDate ? a.endDate.toDate() : new Date(0))).getTime();
+            const db = (typeof b.updatedAt === 'string' ? new Date(b.updatedAt) : b.updatedAt?.toDate ? b.updatedAt.toDate() : (typeof b.endDate === 'string' ? new Date(b.endDate) : b.endDate?.toDate ? b.endDate.toDate() : new Date(0))).getTime();
+            return db - da;
+          })
+          .slice(0, 6)
+          .map((p: any) => ({
+            id: String(p.id ?? ''),
+            name: p.name ?? '',
+            progress: Number(p.progress ?? 0),
+            status: p.status ?? 'activo',
+            deadline:
+              typeof p.endDate === 'string'
+                ? p.endDate
+                : p.endDate?.toDate
+                ? p.endDate.toDate().toISOString()
+                : new Date().toISOString()
+          })) as RecentProject[];
+        setRecentProjects(recent);
       } catch (e) {
         console.error('Error cargando dashboard:', e);
       } finally {
