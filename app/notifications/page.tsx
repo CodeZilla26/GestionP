@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import API from "@/lib/api";
+import { FirebaseAPI } from "@/lib/firebase-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, RefreshCcw, ListChecks, Folder, Info } from "lucide-react";
 
 interface NotificationItem {
-  id: number;
+  id: string;
   userId: number | null;
   type: "task" | "project" | "system" | string;
   title: string;
@@ -33,8 +33,26 @@ export default function NotificationsPage() {
   const fetchPage = async () => {
     setLoading(true);
     try {
-      const { items, total } = await API.getNotifications({ unread: unreadOnly, limit, offset });
-      setItems(items);
+      const list = await FirebaseAPI.getNotifications();
+      const normalized = (list ?? []).map((n: any) => ({
+        id: String(n.id ?? ""),
+        userId: n.userId ?? null,
+        type: n.type ?? "system",
+        title: n.title ?? "",
+        body: n.body ?? "",
+        entity: n.entity ?? null,
+        read: !!n.read,
+        createdAt:
+          typeof n.createdAt === "string"
+            ? n.createdAt
+            : n.createdAt?.toDate
+            ? n.createdAt.toDate().toISOString()
+            : new Date().toISOString(),
+      })) as NotificationItem[];
+      const filtered = unreadOnly ? normalized.filter((n) => !n.read) : normalized;
+      const total = filtered.length;
+      const pageItems = filtered.slice(offset, offset + limit);
+      setItems(pageItems);
       setTotal(total);
     } finally {
       setLoading(false);
@@ -46,13 +64,13 @@ export default function NotificationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unreadOnly, limit, offset]);
 
-  const markOne = async (id: number) => {
-    await API.markNotificationRead(id);
+  const markOne = async (id: string) => {
+    await FirebaseAPI.markNotificationRead(id);
     await fetchPage();
   };
 
   const markAll = async () => {
-    await API.markAllNotificationsRead();
+    await FirebaseAPI.markAllNotificationsRead();
     await fetchPage();
   };
 
