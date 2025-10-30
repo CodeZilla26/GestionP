@@ -363,6 +363,33 @@ export const FirebaseAPI = {
     }
   },
 
+  // Marcar una notificación como leída
+  markNotificationRead: async (id: string) => {
+    try {
+      const ref = doc(db, 'notifications', id);
+      await updateDoc(ref, { read: true, updatedAt: Timestamp.now() });
+      return { success: true };
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      throw error;
+    }
+  },
+
+  // Marcar todas las notificaciones como leídas (opcionalmente filtradas por userId)
+  markAllNotificationsRead: async (userId?: number | null) => {
+    try {
+      const baseCol = collection(db, 'notifications');
+      const q = userId != null ? query(baseCol, where('userId', '==', userId)) : baseCol;
+      const snap = await getDocs(q as any);
+      const updates = snap.docs.map((d) => updateDoc(d.ref, { read: true, updatedAt: Timestamp.now() }));
+      await Promise.all(updates);
+      return { success: true };
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+      throw error;
+    }
+  },
+
   // ==================== USUARIOS ====================
   
   // Obtener usuario por email

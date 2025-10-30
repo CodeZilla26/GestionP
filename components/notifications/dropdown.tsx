@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, CheckCheck, Loader2, ListChecks, Folder, Info } from "lucide-react";
-import API from "@/lib/api";
+import { FirebaseAPI } from "@/lib/firebase-api";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface NotificationItem {
-  id: number;
+  id: string;
   userId: number | null;
   type: "task" | "project" | "system" | string;
   title: string;
@@ -45,9 +45,27 @@ export default function NotificationsDropdown({ count, onChanged, userId }: Prop
   const fetchLatest = async () => {
     setLoading(true);
     try {
-      const { items, total } = await API.getNotifications({ userId, limit: 10, offset: 0 });
-      setItems(items);
-      setTotal(total);
+      const list = await FirebaseAPI.getNotifications();
+      const normalized = (list ?? []).map((n: any) => ({
+        id: String(n.id ?? ""),
+        userId: n.userId ?? null,
+        type: n.type ?? "system",
+        title: n.title ?? "",
+        body: n.body ?? "",
+        entity: n.entity ?? null,
+        read: !!n.read,
+        createdAt:
+          typeof n.createdAt === "string"
+            ? n.createdAt
+            : n.createdAt?.toDate
+            ? n.createdAt.toDate().toISOString()
+            : new Date().toISOString(),
+      }));
+      const filtered = userId != null ? normalized.filter((n: NotificationItem) => n.userId === userId) : normalized;
+      // últimas 10 para dropdown
+      const latest = filtered.slice(0, 10);
+      setItems(latest);
+      setTotal(filtered.length);
     } catch (e) {
       // noop
     } finally {
@@ -58,13 +76,28 @@ export default function NotificationsDropdown({ count, onChanged, userId }: Prop
   const fetchModalPage = async () => {
     setModalLoading(true);
     try {
-      const { items, total } = await API.getNotifications({
-        userId,
-        unread: modalUnreadOnly,
-        limit: modalLimit,
-        offset: (modalPage - 1) * modalLimit,
-      });
-      setModalItems(items);
+      const list = await FirebaseAPI.getNotifications();
+      const normalized = (list ?? []).map((n: any) => ({
+        id: String(n.id ?? ""),
+        userId: n.userId ?? null,
+        type: n.type ?? "system",
+        title: n.title ?? "",
+        body: n.body ?? "",
+        entity: n.entity ?? null,
+        read: !!n.read,
+        createdAt:
+          typeof n.createdAt === "string"
+            ? n.createdAt
+            : n.createdAt?.toDate
+            ? n.createdAt.toDate().toISOString()
+            : new Date().toISOString(),
+      }));
+      let filtered: NotificationItem[] = userId != null ? normalized.filter((n: NotificationItem) => n.userId === userId) : normalized;
+      if (modalUnreadOnly) filtered = filtered.filter((n) => !n.read);
+      const total = filtered.length;
+      const start = (modalPage - 1) * modalLimit;
+      const pageItems = filtered.slice(start, start + modalLimit);
+      setModalItems(pageItems);
       setModalTotal(total);
     } catch {
       // noop
@@ -85,15 +118,15 @@ export default function NotificationsDropdown({ count, onChanged, userId }: Prop
 
   const markAll = async () => {
     try {
-      await API.markAllNotificationsRead(userId);
+      await FirebaseAPI.markAllNotificationsRead(userId);
       onChanged?.();
       await fetchLatest();
     } catch {}
   };
 
-  const markOne = async (id: number) => {
+  const markOne = async (id: string) => {
     try {
-      await API.markNotificationRead(id);
+      await FirebaseAPI.markNotificationRead(id);
       onChanged?.();
       await fetchLatest();
     } catch {}

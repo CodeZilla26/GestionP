@@ -16,9 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
-import projectsRaw from '@/data/projects.json';
-import tasksRaw from '@/data/tasks.json';
-import teamRaw from '@/data/team.json';
+import { FirebaseAPI } from '@/lib/firebase-api';
 import { 
   BarChart, 
   Bar, 
@@ -40,6 +38,9 @@ export default function ReportsPage() {
   const router = useRouter();
   const [timeRange, setTimeRange] = useState('month');
   const [reportType, setReportType] = useState('general');
+  const [projectsRaw, setProjectsRaw] = useState<any[]>([]);
+  const [tasksRaw, setTasksRaw] = useState<any[]>([]);
+  const [teamRaw, setTeamRaw] = useState<any[]>([]);
 
   useEffect(() => {
     const user = localStorage.getItem('user');
@@ -47,6 +48,23 @@ export default function ReportsPage() {
       router.push('/login');
     }
   }, [router]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [projects, tasks, team] = await Promise.all([
+          FirebaseAPI.getProjects(),
+          FirebaseAPI.getTasks(),
+          FirebaseAPI.getTeam()
+        ]);
+        setProjectsRaw(projects as any[]);
+        setTasksRaw(tasks as any[]);
+        setTeamRaw(team as any[]);
+      } catch (e) {
+        // noop
+      }
+    })();
+  }, []);
 
   // Helpers de fechas y etiquetas
   const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
