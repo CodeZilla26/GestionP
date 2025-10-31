@@ -34,7 +34,7 @@ interface Project {
   technologies: string[];
   priority: string;
   budget?: number;
-  assigneeId?: number;
+  assigneeId?: string;
   assigneeName?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -97,6 +97,22 @@ export const FirebaseAPI = {
     } catch (error) {
       console.error('Error creating user profile:', error);
       throw error;
+    }
+  },
+
+  // Contar no leídas (opcionalmente por usuario)
+  getUnreadNotificationsCount: async (userId?: number | null) => {
+    try {
+      const baseCol = collection(db, 'notifications');
+      let qRef: any = query(baseCol, where('read', '==', false));
+      if (userId != null) {
+        qRef = query(baseCol, where('read', '==', false), where('userId', '==', userId));
+      }
+      const snap = await getDocs(qRef);
+      return { count: snap.size };
+    } catch (error) {
+      console.error('Error counting unread notifications:', error);
+      return { count: 0 };
     }
   },
 
@@ -321,6 +337,29 @@ export const FirebaseAPI = {
       };
     } catch (error) {
       console.error('Error creating team member:', error);
+      throw error;
+    }
+  },
+
+  // Actualizar miembro del equipo
+  updateTeamMember: async (id: string, memberData: Partial<TeamMember>) => {
+    try {
+      const ref = doc(db, 'team', id);
+      await updateDoc(ref, { ...memberData, updatedAt: Timestamp.now() });
+      return { id, ...memberData };
+    } catch (error) {
+      console.error('Error updating team member:', error);
+      throw error;
+    }
+  },
+
+  // Eliminar miembro del equipo
+  deleteTeamMember: async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'team', id));
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting team member:', error);
       throw error;
     }
   },

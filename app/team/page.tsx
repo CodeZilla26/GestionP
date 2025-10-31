@@ -24,10 +24,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import API from '@/lib/api';
+import { FirebaseAPI } from '@/lib/firebase-api';
 
 interface TeamMember {
-  id: number;
+  id: string;
   name: string;
   role: string;
   department: string;
@@ -59,7 +59,7 @@ export default function TeamPage() {
 
   // Estado para edición y eliminación
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState({
     name: '',
     role: '',
@@ -84,8 +84,13 @@ export default function TeamPage() {
     const load = async () => {
       try {
         setLoading(true);
-        const list = await API.getTeam();
-        setTeamMembers(list as TeamMember[]);
+        const list = await FirebaseAPI.getTeam();
+        const norm = (list as any[]).map((m: any) => ({
+          ...m,
+          id: String(m.id ?? ''),
+          joinDate: typeof m.joinDate === 'string' ? m.joinDate : m.joinDate?.toDate ? m.joinDate.toDate().toISOString().slice(0,10) : new Date().toISOString().slice(0,10),
+        })) as TeamMember[];
+        setTeamMembers(norm);
       } catch (e) {
         console.error(e);
         toast.error('No se pudo cargar el equipo');
@@ -134,7 +139,7 @@ export default function TeamPage() {
     e.preventDefault();
     if (editingId == null) return;
     try {
-      await API.updateTeamMember(editingId, {
+      await FirebaseAPI.updateTeamMember(editingId, {
         name: editData.name,
         role: editData.role,
         department: editData.department,
@@ -171,7 +176,7 @@ export default function TeamPage() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await API.deleteTeamMember(deleteTarget.id);
+      await FirebaseAPI.deleteTeamMember(deleteTarget.id);
       setTeamMembers(prev => prev.filter(m => m.id !== deleteTarget.id));
       toast.success('Colaborador eliminado');
     } catch (err) {
@@ -194,7 +199,7 @@ export default function TeamPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const created = await API.createTeamMember({
+      const created = await FirebaseAPI.createTeamMember({
         name: formData.name,
         role: formData.role,
         department: formData.department,
@@ -203,9 +208,13 @@ export default function TeamPage() {
         location: formData.location,
         joinDate: new Date().toISOString().split('T')[0],
         skills: formData.skills,
-        status: 'activo'
+        status: 'activo',
+        avatar: null,
+        projects: [],
+        tasksCompleted: 0,
+        tasksInProgress: 0
       });
-      setTeamMembers(prev => [...prev, created as TeamMember]);
+      setTeamMembers(prev => [...prev, { ...(created as any), id: String((created as any).id ?? '') } as TeamMember]);
       setFormData({
         name: '',
         role: '',
@@ -223,7 +232,7 @@ export default function TeamPage() {
     }
   };
 
-  const getRandomGradient = (id: number) => {
+  const getRandomGradient = (id: string) => {
     const gradients = [
       'from-blue-400 to-purple-600',
       'from-green-400 to-blue-600',
@@ -232,7 +241,11 @@ export default function TeamPage() {
       'from-indigo-400 to-purple-600',
       'from-pink-400 to-red-600'
     ];
-    return gradients[id % gradients.length];
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+      hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    }
+    return gradients[hash % gradients.length];
   };
 
   return (

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import API from '@/lib/api';
+import { FirebaseAPI } from '@/lib/firebase-api';
 import { Project, TeamMember, ProjectFormData } from '../types/project.types';
 
 export function useProjects() {
@@ -40,11 +40,18 @@ export function useProjects() {
       try {
         setLoading(true);
         const [p, t] = await Promise.all([
-          API.getProjects(),
-          API.getTeam()
+          FirebaseAPI.getProjects(),
+          FirebaseAPI.getTeam()
         ]);
-        setProjects(p as Project[]);
-        setTeam(t as TeamMember[]);
+        const normP = (p as any[]).map((x: any) => ({
+          ...x,
+          id: String(x.id ?? ''),
+          startDate: typeof x.startDate === 'string' ? x.startDate : x.startDate?.toDate ? x.startDate.toDate().toISOString().slice(0,10) : '',
+          endDate: typeof x.endDate === 'string' ? x.endDate : x.endDate?.toDate ? x.endDate.toDate().toISOString().slice(0,10) : '',
+        })) as Project[];
+        const normT = (t as any[]).map((x: any) => ({ ...x, id: String(x.id ?? '') })) as TeamMember[];
+        setProjects(normP);
+        setTeam(normT);
       } catch (e: any) {
         console.error(e);
         toast.error('No se pudieron cargar los datos del servidor');
@@ -115,7 +122,7 @@ export function useProjects() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await API.deleteProject(deleteTarget.id);
+      await FirebaseAPI.deleteProject(deleteTarget.id);
       setProjects(prev => prev.filter(p => p.id !== deleteTarget.id));
       toast.success('Proyecto eliminado');
     } catch (e) {
@@ -140,7 +147,7 @@ export function useProjects() {
     try {
       if (editingId) {
         // Actualizar proyecto existente
-        await API.updateProject(editingId, {
+        await FirebaseAPI.updateProject(editingId, {
           name: formData.name,
           description: formData.description,
           startDate: formData.startDate,
@@ -166,7 +173,7 @@ export function useProjects() {
         toast.success('¡Proyecto actualizado!');
       } else {
         // Crear nuevo proyecto
-        const created = await API.createProject({
+        const created = await FirebaseAPI.createProject({
           name: formData.name,
           description: formData.description,
           client: '',
@@ -181,7 +188,7 @@ export function useProjects() {
           assigneeName: formData.assigneeName || undefined,
         });
         
-        setProjects(prev => [...prev, created as Project]);
+        setProjects(prev => [...prev, { ...(created as any), id: String((created as any).id ?? '') } as Project]);
         toast.success('¡Proyecto creado exitosamente!');
 
         // Crear tareas iniciales automáticamente si está habilitado
@@ -201,7 +208,12 @@ export function useProjects() {
 
           try {
             // Intentar generar tareas con IA
-            const aiResponse = await API.generateProjectTasks(projectData, team);
+            const res = await fetch('/api/ai/generate-project-tasks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ project: projectData, team })
+            });
+            const aiResponse = await res.json();
             
             if (aiResponse.success && aiResponse.tasks) {
               const base = formData.startDate ? new Date(formData.startDate) : new Date();
@@ -236,7 +248,7 @@ export function useProjects() {
               let ok = 0, fail = 0;
               for (const p of payloads) {
                 try {
-                  await API.createTask(p);
+                  await FirebaseAPI.createTask(p as any);
                   ok += 1;
                 } catch (e) {
                   console.error('Error creando tarea IA', p.name, e);

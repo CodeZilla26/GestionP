@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import API from '@/lib/api';
+import { FirebaseAPI } from '@/lib/firebase-api';
 import { ProjectFormData, TeamMember } from '../types/project.types';
 
 interface ProjectFormProps {
@@ -50,7 +50,13 @@ export function ProjectForm({ formData, setFormData, team, onSubmit, isEditing }
     toast.loading('Generando sugerencias con IA...', { id: 'ai-loading' });
 
     try {
-      const suggestions = await API.generateProjectSuggestions(formData.description, team);
+      const res = await fetch('/api/ai/generate-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: formData.description, team })
+      });
+      const payload = await res.json();
+      const suggestions = payload?.suggestions || {};
       
       // Calcular fechas
       const startDate = formData.startDate || new Date().toISOString().split('T')[0];
@@ -75,7 +81,7 @@ export function ProjectForm({ formData, setFormData, team, onSubmit, isEditing }
         priority: suggestions.priority || prev.priority,
         technologies: suggestions.technologies || [],
         technologiesText: (suggestions.technologies || []).join(', '),
-        assigneeId: suggestedMember ? suggestedMember.id : prev.assigneeId,
+        assigneeId: suggestedMember ? (suggestedMember.id as any) : prev.assigneeId,
         assigneeName: suggestedMember ? suggestedMember.name : prev.assigneeName
       }));
 

@@ -22,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import API from '@/lib/api';
+import { FirebaseAPI } from '@/lib/firebase-api';
 
 interface UserSettings {
   profile: {
@@ -113,17 +113,17 @@ export default function SettingsPage() {
       try {
         const email = parsedUser?.email as string;
         if (!email) return;
-        const res = await API.getUserSettings(email);
-        if (res?.ok) {
+        const res = await FirebaseAPI.getUserByEmail(email);
+        if (res) {
           setSettings((prev) => ({
             ...prev,
-            ...(res.settings || {}),
+            ...((res as any).settings || {}),
             // Ensure profile email/name stay consistent with user
             profile: {
               ...prev.profile,
-              ...(res.settings?.profile || {}),
+              ...((res as any).settings?.profile || {}),
               email: parsedUser.email,
-              name: ((res.settings?.profile?.name as string) || prev.profile.name) as string,
+              name: ((((res as any).settings?.profile?.name as string) || prev.profile.name) as string),
             },
           }));
         }
@@ -178,8 +178,9 @@ export default function SettingsPage() {
     try {
       const email = user?.email as string;
       if (!email) return;
-      const res = await API.updateUserSettings(email, settings);
-      if (res?.ok) {
+      const doc = await FirebaseAPI.getUserByEmail(email);
+      if (doc?.id) {
+        await FirebaseAPI.updateUserSettings(doc.id, settings);
         // Update localStorage user cache (for UI like sidebar/header)
         try {
           const cached = localStorage.getItem('user');
@@ -193,8 +194,6 @@ export default function SettingsPage() {
           }
         } catch {}
         toast.success('Configuración guardada exitosamente');
-      } else {
-        toast.error('No se pudo guardar la configuración');
       }
     } catch (e) {
       console.error(e);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { useSearchParams } from 'next/navigation';
@@ -26,22 +26,22 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import API from '@/lib/api';
+import { FirebaseAPI } from '@/lib/firebase-api';
 
 interface Task {
-  id: number;
+  id: string;
   name: string;
   description: string;
   project: string;
   assignee: string;
   deadline: string;
-  status: 'pendiente' | 'progreso' | 'completada';
+  status: 'pendiente' | 'progreso' | 'completado';
   progress: number;
   estimatedTime: number;
   priority: 'baja' | 'media' | 'alta';
 }
 
-export default function TasksPage() {
+function TasksPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState('todas');
@@ -69,11 +69,11 @@ export default function TasksPage() {
   const getProjectByName = (name: string) => projects.find((p: any) => p.name === name);
   const getTeamForProject = (name: string) => {
     const proj = getProjectByName(name);
-    if (!proj) return [] as { id: number; name: string; status?: string; tasksInProgress?: number }[];
+    if (!proj) return [] as { id: string; name: string; status?: string; tasksInProgress?: number }[];
     const teamNames: string[] = (proj.team || []);
     return team
       .filter((m: any) => teamNames.includes(m.name))
-      .map((m: any) => ({ id: m.id, name: m.name, status: m.status, tasksInProgress: m.tasksInProgress ?? 0 }));
+      .map((m: any) => ({ id: String(m.id ?? ''), name: m.name, status: m.status, tasksInProgress: m.tasksInProgress ?? 0 }));
   };
 
   // Autoasignación al cambiar proyecto en el modal de nueva tarea
@@ -114,7 +114,7 @@ export default function TasksPage() {
   const autoAssignCollaboratorForTask = (projectName: string) => {
     const candidates = getTeamForProject(projectName)
       .filter(m => (m.status ?? 'activo') === 'activo');
-    if (!candidates.length) return null as { id: number; name: string } | null;
+    if (!candidates.length) return null as { id: string; name: string } | null;
     const best = candidates.reduce((a, b) => ((a.tasksInProgress ?? 0) <= (b.tasksInProgress ?? 0) ? a : b));
     return { id: best.id, name: best.name };
   };
@@ -159,8 +159,13 @@ export default function TasksPage() {
     toast.loading('Generando sugerencias con IA...', { id: 'task-ai' });
 
     try {
-      const response = await API.generateTaskSuggestions(formData.description, projects, team);
-      const suggestions = response.suggestions;
+      const res = await fetch('/api/ai/generate-project-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: formData.description, projects, team })
+      });
+      const response = await res.json();
+      const suggestions = response?.suggestions ?? {};
 
       // Buscar proyecto sugerido en la lista local
       const suggestedProject = suggestions.suggestedProject 
@@ -208,12 +213,12 @@ export default function TasksPage() {
 
   // Edición y eliminación
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
 
   const [updateData, setUpdateData] = useState({
-    status: 'pendiente' as 'pendiente' | 'progreso' | 'completada',
+    status: 'pendiente' as 'pendiente' | 'progreso' | 'completado',
     progress: 0,
     timeSpent: 0,
     comments: ''
@@ -232,13 +237,25 @@ export default function TasksPage() {
       try {
         setLoading(true);
         const [tks, projs, members] = await Promise.all([
-          API.getTasks(),
-          API.getProjects(),
-          API.getTeam(),
+          FirebaseAPI.getTasks(),
+          FirebaseAPI.getProjects(),
+          FirebaseAPI.getTeam(),
         ]);
-        setTasks(tks as Task[]);
-        setProjects(projs as any[]);
-        setTeam(members as any[]);
+        const normTasks: Task[] = (tks as any[]).map((t: any) => ({
+          id: String(t.id ?? ''),
+          name: t.name ?? '',
+          description: t.description ?? '',
+          project: t.project ?? '',
+          assignee: t.assignee ?? '',
+          deadline: typeof t.deadline === 'string' ? t.deadline : t.deadline?.toDate ? t.deadline.toDate().toISOString() : new Date().toISOString(),
+          status: (t.status ?? 'pendiente') as Task['status'],
+          progress: Number(t.progress ?? 0),
+          estimatedTime: Number(t.estimatedTime ?? 0),
+          priority: (t.priority ?? 'media') as Task['priority'],
+        }));
+        setTasks(normTasks);
+        setProjects((projs as any[]).map((p: any) => ({ ...p, id: String(p.id ?? '') })));
+        setTeam((members as any[]).map((m: any) => ({ ...m, id: String(m.id ?? '') })));
       } catch (e) {
         console.error(e);
         toast.error('No se pudieron cargar tareas/proyectos/equipo');
@@ -274,7 +291,7 @@ export default function TasksPage() {
         return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">Pendiente</Badge>;
       case 'progreso':
         return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">En Progreso</Badge>;
-      case 'completada':
+      case 'completado':
         return <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Completada</Badge>;
       default:
         return <Badge variant="outline">Desconocido</Badge>;
@@ -299,7 +316,7 @@ export default function TasksPage() {
     e.preventDefault();
     if (!editingId) return;
     try {
-      await API.updateTask(editingId, {
+      await FirebaseAPI.updateTask(editingId, {
         name: formData.name,
         description: formData.description,
         project: formData.project,
@@ -335,7 +352,7 @@ export default function TasksPage() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await API.deleteTask(deleteTarget.id);
+      await FirebaseAPI.deleteTask(deleteTarget.id);
       setTasks(prev => prev.filter(t => t.id !== deleteTarget.id));
       toast.success('Tarea eliminada');
     } catch (e) {
@@ -368,7 +385,21 @@ export default function TasksPage() {
     e.preventDefault();
     
     try {
-      const created = await API.createTask({
+      const created = await FirebaseAPI.createTask({
+        name: formData.name,
+        description: formData.description,
+        project: formData.project,
+        projectId: formData.project,
+        assignee: formData.assignee,
+        deadline: formData.deadline,
+        status: 'pendiente',
+        progress: 0,
+        estimatedTime: parseInt(formData.estimatedTime),
+        priority: formData.priority,
+        tags: []
+      });
+      const newTask: Task = {
+        id: String((created as any).id ?? ''),
         name: formData.name,
         description: formData.description,
         project: formData.project,
@@ -378,8 +409,8 @@ export default function TasksPage() {
         progress: 0,
         estimatedTime: parseInt(formData.estimatedTime),
         priority: formData.priority
-      });
-      setTasks(prev => [...prev, created as Task]);
+      };
+      setTasks(prev => [...prev, newTask]);
       setFormData({
         name: '',
         description: '',
@@ -401,7 +432,7 @@ export default function TasksPage() {
     e.preventDefault();
     if (!selectedTask) return;
     try {
-      await API.updateTask(selectedTask.id, {
+      await FirebaseAPI.updateTask(selectedTask.id, {
         status: updateData.status,
         progress: updateData.progress,
       });
@@ -434,7 +465,7 @@ export default function TasksPage() {
     switch (status) {
       case 'pendiente': return 'bg-orange-400';
       case 'progreso': return 'bg-blue-400';
-      case 'completada': return 'bg-green-400';
+      case 'completado': return 'bg-green-400';
     }
   };
 
@@ -447,7 +478,7 @@ export default function TasksPage() {
   };
 
   const renderTaskCard = (task: Task) => {
-    const overdue = isOverdue(task.deadline) && task.status !== 'completada';
+    const overdue = isOverdue(task.deadline) && task.status !== 'completado';
     if (cardVariant === 'A') {
       // Compacta tipo lista
       return (
@@ -607,7 +638,7 @@ export default function TasksPage() {
                   { key: 'todas', label: 'Todas' },
                   { key: 'pendiente', label: 'Pendientes' },
                   { key: 'progreso', label: 'En Progreso' },
-                  { key: 'completada', label: 'Completadas' }
+                  { key: 'completado', label: 'Completadas' }
                 ].map((item) => (
                   <button
                     key={item.key}
@@ -801,7 +832,7 @@ export default function TasksPage() {
                     <SelectContent>
                       <SelectItem value="pendiente">Pendiente</SelectItem>
                       <SelectItem value="progreso">En Progreso</SelectItem>
-                      <SelectItem value="completada">Completada</SelectItem>
+                      <SelectItem value="completado">Completada</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -975,5 +1006,19 @@ export default function TasksPage() {
             </AlertDialogContent>
           </AlertDialog>
     </DashboardLayout>
+  );
+}
+
+export default function TasksPage() {
+  return (
+    <Suspense fallback={
+      <DashboardLayout title="Gestión de Tareas">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-slate-400">Cargando tareas...</div>
+        </div>
+      </DashboardLayout>
+    }>
+      <TasksPageContent />
+    </Suspense>
   );
 }

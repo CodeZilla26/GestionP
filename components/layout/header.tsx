@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import API from '@/lib/api';
+import { FirebaseAPI } from '@/lib/firebase-api';
 import NotificationsDropdown from '@/components/notifications/dropdown';
 
 interface HeaderProps {
@@ -19,7 +19,7 @@ export function Header({ title }: HeaderProps) {
     let alive = true;
     const fetchCount = async () => {
       try {
-        const { count } = await API.getUnreadNotificationsCount();
+        const { count } = await FirebaseAPI.getUnreadNotificationsCount();
         if (alive) setUnreadNotifs(count || 0);
       } catch (e) {}
     };
@@ -46,7 +46,7 @@ export function Header({ title }: HeaderProps) {
 
   const refreshUnread = async () => {
     try {
-      const { count } = await API.getUnreadNotificationsCount();
+      const { count } = await FirebaseAPI.getUnreadNotificationsCount();
       setUnreadNotifs(count || 0);
     } catch {}
   };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import API from '@/lib/api';
+import { FirebaseAPI } from '@/lib/firebase-api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { FaUserShield, FaUser, FaLock, FaEye, FaEyeSlash, FaSignInAlt } from 'react-icons/fa';
@@ -39,8 +39,8 @@ export default function LoginPage() {
         // Try to resolve a friendly display name
         let displayName = '';
         try {
-          const settings = await API.getUserSettings(email).catch(() => null as any);
-          displayName = settings?.settings?.profile?.name || '';
+          const userDoc = await FirebaseAPI.getUserByEmail(email).catch(() => null as any);
+          displayName = userDoc?.settings?.profile?.name || '';
         } catch {}
         if (!displayName) {
           displayName = payload?.user?.name || String(email).split('@')[0];
